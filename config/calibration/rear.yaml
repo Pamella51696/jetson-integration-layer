@@ -1,0 +1,21 @@
+# CALIBRATION TEMPLATE for the "rear" camera  -  NOT VALID YET (valid: false => the sidecar publishes NO metric distance from it)
+#
+# The image numbers below are EXACT for the picture Java sends to the sidecar (the straightened 640x360 view), taken from
+# VideoStreamingServer.java (RearFeedPipeline: pinhole 88 deg, crop rows 50..410). Everything marked TODO has to be MEASURED on the real vehicle:
+#   t_m          camera position in metres in the vehicle frame (origin = rear axle centre, +x forward, +y LEFT, +z up)
+#   r_ypr_deg    yaw / pitch / roll of the camera in degrees (vehicle_mount_yaw: yaw 0 = forward, +90 = left, -90 = right, 180 = rear;
+#                pitch: positive = looking DOWN toward the road)
+#                REAR ONLY: Java tilts the virtual view 18 degrees toward the top of the lens image; include that in the pitch.
+# Then set  valid: true  and  calibration.status: VALIDATED  and verify with vision/run_accuracy.py (tape-measured distances).
+camera_name: rear
+calibration_type: measured
+valid: false
+calibration: {status: UNVERIFIED, version: 1}
+coordinate_frame: rear_axle
+image: {width: 640, height: 360, fx: 331.37, fy: 331.37, cx: 320.0, cy: 200.0}
+camera_model: {type: rectified_pinhole}
+extrinsics:
+  t_m: [0.0, 0.0, 0.0]            # TODO measure
+  rotation_model: vehicle_mount_yaw
+  r_ypr_deg: [180, 0.0, 0.0]    # TODO measure (yaw preset for this camera; pitch/roll unknown)
+ground_plane: {enabled: true, normal_vehicle: [0.0, 0.0, 1.0], offset_m: 0.0}

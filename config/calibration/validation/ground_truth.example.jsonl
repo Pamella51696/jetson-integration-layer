@@ -1,0 +1,5 @@
+# One line per measurement. Park the car with a curb at a TAPE-MEASURED distance, take the sidecar's curb contour for that picture, and write the measured distance.
+# distance_m must be measured the SAME way the sidecar defines it: hypot(x, y) from the vehicle-frame origin (rear axle centre) to the curb contact point on the ground.
+# The two data lines below are FAKE examples of the format - replace them with your own.
+{"id": "right_001", "camera": "right", "contour_camera_pixels": [[528, 226], [625, 306]], "distance_m": 2.10, "image_height": 360, "tolerance_m": 0.15, "notes": "FAKE example"}
+{"id": "front_001", "camera": "front", "contour_camera_pixels": [[200, 280], [420, 300]], "distance_m": 1.20, "image_height": 360, "tolerance_m": 0.15, "notes": "FAKE example"}

@@ -1,0 +1,80 @@
+{
+  "_comment": "EXAMPLE. Node names are PLACEHOLDERS: run  python tools/glb_inspect.py 2025_volkswagen_golf_r.glb --write-profile vehicle-profile.json  and replace every TODO. Copy to project root as vehicle-profile.json (auto-loaded) or start with -Dwp5.profile=<path>. Rotation applied by Android: node.localRotation = restRotation * quat. If a part turns the wrong way, flip 'sign'. vehicle numbers below are approximate Golf-R-class values: take the real ones from the inspector / VW data sheet.",
+  "profileName": "golf-r-2025",
+  "model": {
+    "file": "2025_volkswagen_golf_r.glb",
+    "frame": {
+      "forward": "+Z",
+      "left": "+X",
+      "up": "+Y"
+    },
+    "rearAxleOriginM": [
+      0,
+      0,
+      0
+    ]
+  },
+  "vehicle": {
+    "wheelbaseM": 2.63,
+    "trackWidthM": 1.54,
+    "vehicleWidthM": 1.79,
+    "steeringRatio": 15.0,
+    "maxSteeringWheelDeg": 540
+  },
+  "steering": {
+    "deadbandDeg": 0.5,
+    "heartbeatMs": 1000,
+    "pathLengthM": 5.0,
+    "pathPoints": 12
+  },
+  "zones": {
+    "dangerM": 0.5,
+    "warningM": 1.0,
+    "maxRangeM": 2.5,
+    "hysteresisM": 0.05
+  },
+  "colors": {
+    "DANGER": "#FF3B30",
+    "WARNING": "#FFCC00",
+    "SAFE": "#34C759",
+    "NONE": "#9E9E9E"
+  },
+  "bindings": {
+    "steeringWheel": {
+      "node": "TODO_steering_wheel_node",
+      "source": "steeringWheelDeg",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "sign": 1,
+      "minDeg": -540,
+      "maxDeg": 540
+    },
+    "wheelFrontLeft": {
+      "node": "TODO_front_left_steer_node",
+      "source": "leftWheelDeg",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "sign": 1,
+      "minDeg": -45,
+      "maxDeg": 45
+    },
+    "wheelFrontRight": {
+      "node": "TODO_front_right_steer_node",
+      "source": "rightWheelDeg",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "sign": 1,
+      "minDeg": -45,
+      "maxDeg": 45
+    }
+  }
+}
