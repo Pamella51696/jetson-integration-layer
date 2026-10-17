@@ -1,0 +1,34 @@
+# PR6 — Jetson GPU integration defaults (merge with vision/config.yaml).
+# Input dimensions match curb_segmentation.onnx in this repository (896×512).
+
+gpu:
+  enabled: false
+  backend: auto
+  allow_cpu_fallback: true
+
+  model:
+    onnx_path: "models/curb_segmentation.onnx"
+    engine_path: "models/curb_segmentation_orin_fp16.engine"
+    precision: "fp16"
+    input_width: 896
+    input_height: 512
+
+  pipeline:
+    max_pending_frames: 1
+    max_inference_fps: 10
+    drop_oldest_frame: true
+
+  resources:
+    max_inference_workspace_mb: 256
+    max_gpu_buffers: 2
+    max_process_rss_mb: 1200
+
+  safety:
+    preserve_video_stream: true
+    publish_only_validated_results: true
+    reject_stale_results: true
+
+  diagnostics:
+    report_backend: true
+    report_latency: true
+    report_memory: true
