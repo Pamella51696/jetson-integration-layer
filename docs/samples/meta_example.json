@@ -1,0 +1,45 @@
+{
+    "panorama": {
+        "width": 2320,
+        "height": 360,
+        "player_url": "http://localhost:9097/play"
+    },
+    "cameras": {
+        "front": {
+            "x": 0,
+            "y": 0,
+            "w": 640,
+            "h": 360,
+            "source_w": 640,
+            "source_h": 360,
+            "overlap_px": 80
+        },
+        "right": {
+            "x": 560,
+            "y": 0,
+            "w": 640,
+            "h": 360,
+            "source_w": 640,
+            "source_h": 360,
+            "overlap_px": 80
+        },
+        "rear": {
+            "x": 1120,
+            "y": 0,
+            "w": 640,
+            "h": 360,
+            "source_w": 640,
+            "source_h": 360,
+            "overlap_px": 80
+        },
+        "left": {
+            "x": 1680,
+            "y": 0,
+            "w": 640,
+            "h": 360,
+            "source_w": 640,
+            "source_h": 360,
+            "overlap_px": 80
+        }
+    }
+}

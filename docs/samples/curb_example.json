@@ -1,0 +1,36 @@
+{
+    "type": "curb",
+    "v": 2,
+    "seq": 3,
+    "ts": 1791281353273,
+    "panorama": { "width": 2320, "height": 360 },
+    "thresholds": { "dangerM": 0.5, "warningM": 1.0 },
+    "zones": [
+        {
+            "id": "CURB_REAR", "pos": "REAR", "kind": "CURB", "source": "CAMERA",
+            "confidence": 0.9, "distanceM": 0.35,
+            "zone": "DANGER", "level": 3, "color": "#FF3B30",
+            "camera": "rear",
+            "pano": { "x": 1120, "w": 640, "xNorm": 0.483, "wNorm": 0.276 }
+        },
+        {
+            "id": "CURB_LEFT", "pos": "LEFT", "kind": "CURB", "source": "CAMERA",
+            "confidence": 0.82, "distanceM": 0.8,
+            "zone": "WARNING", "level": 2, "color": "#FFCC00",
+            "camera": "left",
+            "pano": { "x": 1680, "w": 640, "xNorm": 0.724, "wNorm": 0.276 }
+        }
+    ],
+    "summary": {
+        "worstZone": "DANGER", "worstColor": "#FF3B30",
+        "nearestDistanceM": 0.35, "nearestZoneId": "CURB_REAR",
+        "leftWorst": "WARNING", "rightWorst": "NONE", "frontWorst": "NONE", "rearWorst": "DANGER"
+    },
+    "vision": {
+        "mode": "camera",
+        "left":  { "detected": true, "confidence": 0.82, "distanceM": 0.8, "source": "CAMERA", "line": { "x1": 1700, "y1": 267, "x2": 2300, "y2": 267 } },
+        "right": { "detected": false },
+        "front": { "detected": false },
+        "rear":  { "detected": true, "confidence": 0.9, "distanceM": 0.35, "source": "CAMERA", "line": null }
+    }
+}
