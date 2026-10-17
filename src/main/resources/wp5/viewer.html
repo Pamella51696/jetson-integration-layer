@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WP5 viewer - Android stand-in</title>
+<style>
+:root{--bg:#0b0d12;--card:#151922;--line:#262c3a;--tx:#e6e9ef;--mut:#8b94a7;--ok:#34C759;--warn:#FFCC00;--bad:#FF3B30}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 system-ui,Segoe UI,sans-serif}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:16px;font-weight:600;margin:0 8px 0 0}
+.pill{padding:3px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--mut);font-size:12px}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.bad{color:var(--bad);border-color:var(--bad)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 460px;gap:14px;padding:14px 16px}
+@media(max-width:1100px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.card h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px;font-weight:600}
+#panoWrap{position:relative;line-height:0;background:#000;border-radius:6px;overflow:hidden}
+#pano{width:100%;display:block;min-height:120px}#ov{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+#panoMsg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--mut);background:#000a;line-height:1.4;text-align:center;padding:12px}
+.row{display:flex;gap:8px;align-items:center;margin:4px 0}.row label{width:120px;color:var(--mut);font-size:12px}
+.row input[type=range]{flex:1}.row .v{width:56px;text-align:right;font-variant-numeric:tabular-nums}
+select,button,input[type=text]{background:#0f131b;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font:inherit}
+button{cursor:pointer}button:hover{border-color:var(--mut)}
+.legend span{display:inline-block;margin-right:12px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+pre{margin:6px 0 0;background:#0f131b;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:11px;max-height:120px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.warn{color:var(--warn);font-size:12px;margin:6px 0}
+</style></head><body>
+<header><h1>WP5 viewer <span style="color:var(--mut);font-weight:400">(acts like the Android app)</span></h1>
+<span class="pill" id="pConn">SSE: connecting</span><span class="pill" id="pSteer">steering: -</span>
+<span class="pill" id="pCurb">curb: -</span><span class="pill" id="pValid">valid: -</span>
+<span class="pill" id="pProfile">profile: -</span></header>
+<main>
+<section>
+ <div class="card"><h2>Panorama (yellow line = curb found in the frame)</h2>
+  <div id="panoWrap"><img id="pano" alt="panorama"><canvas id="ov"></canvas>
+   <div id="panoMsg">No panorama frames.<br>Check that the 4 videos / cameras are readable (see the server console).</div></div>
+  <div class="legend" style="margin-top:8px"><span><i class="dot" style="background:var(--bad)"></i>DANGER &le; <b id="tD">-</b> m</span>
+   <span><i class="dot" style="background:var(--warn)"></i>WARNING &le; <b id="tW">-</b> m</span>
+   <span><i class="dot" style="background:var(--ok)"></i>SAFE (dotted lines, all 4 sides)</span><span><i class="dot" style="background:#9E9E9E"></i>no curb in the frame = no zone</span><span><i class="dot" style="background:#FF2DA6"></i>Vision model curb (pink line + distance; "~" = uncalibrated estimate)</span></div>
+  <div id="visStat" style="font:12px monospace;color:#9aa4b8;margin:6px 0">vision: waiting for status...</div>
+  <pre id="rawCurb">waiting for curb message...</pre></div>
+ <div class="card" style="margin-top:14px"><h2>Top view: wheels, guide lines, curb zones on all 4 sides (smoothed like the phone should)</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">
+   <canvas id="top" width="440" height="440" style="max-width:100%;background:#0f131b;border-radius:6px"></canvas>
+   <div><canvas id="sw" width="150" height="150"></canvas>
+    <div id="swTxt" style="font-variant-numeric:tabular-nums;color:var(--mut);margin-top:4px;line-height:1.7">-</div></div></div>
+  <pre id="rawSteer">waiting for steering message...</pre></div>
+</section>
+<aside>
+ <div class="card"><h2>Test controls (this page plays the CAN gateway + a curb in the frames)</h2>
+  <div class="row"><label>Send steering</label><input type="checkbox" id="send"> <span class="mut" id="sendInfo" style="color:var(--mut);font-size:12px">off</span></div>
+  <div class="warn">Start the server WITHOUT -Dwp5.simulate=true, otherwise both fight over the steering value.</div>
+  <div class="row"><label>Steering wheel</label><input type="range" id="swa" min="-540" max="540" value="0" step="1"><span class="v" id="swaV">0&deg;</span></div>
+  <div class="row"><label>Gear</label><select id="gear"><option>R</option><option>D</option><option>P</option><option>N</option></select>
+   <label style="width:auto">Speed km/h</label><input type="text" id="spd" value="1.5" size="4"></div>
+  <div class="row"><label>Auto sweep</label><button id="sweep">start / stop</button><span style="color:var(--mut);font-size:12px">&plusmn;450&deg; sine, 12 s</span></div>
+  <h2 style="margin-top:12px">Curb in the frame (TEST)</h2>
+  <div style="color:var(--mut);font-size:12px;margin:0 0 6px">Pretends a camera frame contains a curb at the given distance (the sample clips have none). Untick = no curb in that frame = no zone. The real detector runs on the server by itself; this only overrides it for the ticked side.</div>
+  <div id="vc"></div>
+  <div class="row"><label>Ingest API key</label><input type="text" id="key" placeholder="only if -Dwp5.ingestToken set" style="flex:1"></div>
+ </div>
+</aside></main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const SIDES=["left","right","front","rear"];                                  // zones come from the camera frames, one per side
+const PANO_ZONES=false;                                                      // true = draw zone lines on the panorama again
+const ZC=["#FF3B30","#FFCC00","#34C759"];                                  // 3 zones: DANGER (near), WARNING (mid), SAFE (far)
+const zoneLines=()=>{const d=curb&&curb.thresholds?curb.thresholds.dangerM:.5,w=curb&&curb.thresholds?curb.thresholds.warningM:1;return [d,w,w+(w-d)];};
+let veh={wheelbaseM:2.7,trackWidthM:1.6,vehicleWidthM:1.85,lengthM:4.4};
+let vision=null,visionAt=0,steer=null,curb=null,meta=null,lastSeq=-1,cnt={s:0,c:0},lastSteerAt=0,lastCurbAt=0;
+const cur={swa:0,l:0,r:0},tgt={swa:0,l:0,r:0};
+
+/* ---------- profile + meta (same calls the Android app makes once at start-up) ---------- */
+fetch("/api/v1/profile").then(r=>r.json()).then(p=>{
+  const v=p.vehicle||{};Object.assign(veh,{wheelbaseM:v.wheelbaseM||veh.wheelbaseM,trackWidthM:v.trackWidthM||veh.trackWidthM,vehicleWidthM:v.vehicleWidthM||veh.vehicleWidthM});
+  if(p.model&&p.model.sizeM&&p.model.sizeM.length)veh.lengthM=p.model.sizeM.length;
+  $("pProfile").textContent="profile: "+(p.profileName||"?");
+}).catch(()=>{$("pProfile").textContent="profile: unavailable";});
+fetch("/meta").then(r=>r.json()).then(m=>{meta=m;drawCurb();}).catch(()=>{});
+
+/* ---------- panorama stream with auto-retry ---------- */
+const pano=$("pano");function startPano(){pano.src="/stitch?"+Date.now();}
+pano.onerror=()=>{$("panoMsg").style.display="flex";setTimeout(startPano,2500);};
+pano.onload=()=>{$("panoMsg").style.display="none";sizeOv();drawCurb();};
+startPano();
+
+/* ---------- SSE (what OkHttp EventSource does on Android) ---------- */
+function connect(){
+  const es=new EventSource("/api/v1/signals");
+  es.onopen=()=>{$("pConn").textContent="SSE: connected";$("pConn").className="pill ok";};
+  es.onerror=()=>{$("pConn").textContent="SSE: reconnecting";$("pConn").className="pill bad";};
+  es.addEventListener("steering",e=>{
+    const d=JSON.parse(e.data);
+    if(d.seq<=lastSeq&&d.seq>lastSeq-5)return;       // drop out-of-order
+    lastSeq=d.seq;steer=d;cnt.s++;lastSteerAt=Date.now();
+    tgt.swa=d.steeringWheelDeg;tgt.l=d.leftWheelDeg;tgt.r=d.rightWheelDeg;
+    $("rawSteer").textContent=JSON.stringify(d,(k,v)=>Array.isArray(v)&&v.length>3?"[...]":v).slice(0,700);
+  });
+  es.addEventListener("curb",e=>{curb=JSON.parse(e.data);cnt.c++;lastCurbAt=Date.now();
+    $("tD").textContent=curb.thresholds.dangerM;$("tW").textContent=curb.thresholds.warningM;
+    $("rawCurb").textContent="zones from the camera frames:  "+SIDES.map(sd=>sd+"="+(curb.vision&&curb.vision[sd]&&curb.vision[sd].detected?curb.vision[sd].distanceM+" m":"no curb")).join("  ")+"\n"+curb.zones.map(z=>z.pos+" "+z.zone+" "+z.distanceM+"m (camera "+z.camera+", x="+z.pano.x+" w="+z.pano.w+")").join("\n");
+    drawCurb();});
+}
+connect();
+setInterval(()=>{ // rates + staleness
+  const now=Date.now();
+  $("pSteer").textContent="steering: "+cnt.s+"/s"+(steer?" #"+steer.seq:"");
+  $("pCurb").textContent="curb: "+cnt.c+"/s";cnt.s=0;cnt.c=0;
+  const v=$("pValid");if(!steer){v.textContent="valid: -";v.className="pill";}
+  else{const ok=steer.valid&&now-lastSteerAt<2500;v.textContent=ok?"valid: yes":"valid: STALE";v.className="pill "+(ok?"ok":"bad");}
+},1000);
+
+/* ---------- vision model (Python sidecar) : pink curb contour ---------- */
+const visionHold={};                                                  // last pink line per camera, kept 1.2 s so it does not blink
+function pollVision(){
+  fetch("/api/v1/vision/detections").then(r=>r.status===200?r.json():null).then(d=>{
+    if(!d)return;vision=d;visionAt=Date.now();
+    (d.detections||[]).forEach(det=>{if(det.detectionValid&&det.contour&&det.contour.length>=2&&det.coordinateSpace!=="CAMERA_PIXELS")
+      visionHold[(det.camera||"").toLowerCase()]={det:det,t:Date.now()};});
+    drawCurb();}).catch(()=>{});}
+setInterval(pollVision,200);pollVision();
+function pollVisionStatus(){
+  fetch("/api/v1/vision/status").then(r=>r.json()).then(st=>{
+    const el=$("visStat");if(!el)return;
+    const live=Object.keys(visionHold).filter(c=>Date.now()-visionHold[c].t<1200);
+    let msg;
+    if(st.engine==="classic")msg="vision: ENGINE IS 'classic' - the Python model is NOT used. Start Java with -Dwp5.vision.engine=auto";
+    else if(!st.sidecarAlive)msg="vision: engine="+st.engine+" but the Python sidecar is NOT answering (start: cd vision; python service.py). framesSent="+st.framesSent+" failures="+st.sendFailures;
+    else msg="vision: sidecar OK, "+st.resultsPerSecond+" results/s, framesSent="+st.framesSent+" | pink lines now: "+(live.length?live.map(c=>c+" "+Math.round((visionHold[c].det.confidence||0)*100)+"%").join(", "):"none (model sees no curb in the frames)");
+    el.textContent=msg;el.style.color=(st.engine!=="classic"&&st.sidecarAlive)?"#7ee787":"#ff7b72";
+  }).catch(()=>{const el=$("visStat");if(el)el.textContent="vision: status endpoint not reachable (is this the NEW build? run mvn clean compile and restart Java)";});}
+setInterval(pollVisionStatus,1000);pollVisionStatus();
+/* ---------- panorama overlay ---------- */
+const ov=$("ov"),octx=ov.getContext("2d");
+function sizeOv(){const r=pano.getBoundingClientRect();ov.width=Math.max(1,Math.round(r.width));ov.height=Math.max(1,Math.round(r.height));}
+window.addEventListener("resize",()=>{sizeOv();drawCurb();});
+function drawCurb(){
+  const W=ov.width,H=ov.height;octx.clearRect(0,0,W,H);
+  if(meta&&meta.cameras){octx.setLineDash([4,4]);octx.strokeStyle="#ffffff55";octx.fillStyle="#ffffffaa";octx.font="11px sans-serif";
+    const pw=meta.panorama.width;Object.keys(meta.cameras).forEach(n=>{const c=meta.cameras[n],x=c.x/pw*W;
+      octx.beginPath();octx.moveTo(x,0);octx.lineTo(x,H);octx.stroke();octx.fillText(n,x+4,12);});octx.setLineDash([]);}
+  if(curb&&curb.vision&&curb.panorama){SIDES.forEach(sd=>{const v=curb.vision[sd];             // highlight the curb the detector found IN the frame
+    if(!v||!v.detected||!v.line)return;const sx=W/curb.panorama.width,sy=H/curb.panorama.height;
+    octx.save();octx.strokeStyle="#FFCC00";octx.lineWidth=3;octx.shadowColor="#000";octx.shadowBlur=4;octx.beginPath();
+    octx.moveTo(v.line.x1*sx,v.line.y1*sy);octx.lineTo(v.line.x2*sx,v.line.y2*sy);octx.stroke();
+    octx.fillStyle="#fff";octx.font="bold 12px sans-serif";octx.fillText("curb "+(+v.distanceM).toFixed(2)+" m",v.line.x1*sx+6,v.line.y1*sy-6);octx.restore();});}
+  {                                                                              // PINK = curb contour found by the vision model
+    const pw=(curb&&curb.panorama?curb.panorama.width:(meta&&meta.panorama?meta.panorama.width:(vision&&vision.frameWidth)))||2320;
+    const ph=(curb&&curb.panorama?curb.panorama.height:(meta&&meta.panorama?meta.panorama.height:(vision&&vision.frameHeight)))||360;
+    Object.keys(visionHold).forEach(cam=>{
+      const h=visionHold[cam];if(Date.now()-h.t>1200)return;const det=h.det,pts=det.contour;
+      const jv=curb&&curb.vision?curb.vision[cam]:null;
+      let dtxt="";
+      if(det.distanceValid&&det.distanceM!=null)dtxt=(+det.distanceM).toFixed(2)+" m";                  // metric (validated calibration)
+      else if(jv&&jv.detected&&jv.distanceM!=null)dtxt="~"+(+jv.distanceM).toFixed(2)+" m";             // placeholder scale, NOT calibrated
+      octx.save();octx.strokeStyle="#FF2DA6";octx.lineWidth=4;octx.lineJoin="round";octx.lineCap="round";
+      octx.shadowColor="#000";octx.shadowBlur=4;octx.beginPath();
+      pts.forEach((q,i)=>{const x=q[0]/pw*W,y=q[1]/ph*H;i?octx.lineTo(x,y):octx.moveTo(x,y);});octx.stroke();
+      octx.fillStyle="#FF2DA6";octx.font="bold 13px sans-serif";
+      octx.fillText("CURB "+dtxt+"  ("+Math.round((det.confidence||0)*100)+"%, "+cam+")",pts[0][0]/pw*W+6,Math.max(14,pts[0][1]/ph*H-8));
+      octx.restore();});}
+  if(!curb||!PANO_ZONES)return;   // zones are NOT drawn on the camera frames any more
+  // 3 dotted zone lines per curb, drawn like a reversing-camera guide (near = bottom/red ... far = top/green)
+  curb.zones.forEach(z=>{
+    const x=z.pano.xNorm*W,w=z.pano.wNorm*W;if(w<=0)return;
+    const act=z.zone==="DANGER"?0:z.zone==="WARNING"?1:z.zone==="SAFE"?2:-1,none=z.zone==="NONE";
+    const yB=H*.90,yT=H*.42,inB=.03,inT=.22;
+    const xl=t=>x+w*(inB+(inT-inB)*t),xr=t=>x+w*(1-(inB+(inT-inB)*t));
+    octx.save();octx.lineCap="round";octx.setLineDash([9,7]);
+    octx.strokeStyle=none?"#9E9E9E":z.color;octx.globalAlpha=.9;octx.lineWidth=2;      // side edges
+    octx.beginPath();octx.moveTo(xl(0),yB);octx.lineTo(xl(1),yT);octx.moveTo(xr(0),yB);octx.lineTo(xr(1),yT);octx.stroke();
+    for(let i=0;i<3;i++){const t=i/2,y=yB+(yT-yB)*t;
+      octx.strokeStyle=none?"#9E9E9E":ZC[i];octx.globalAlpha=(i===act)?1:.55;octx.lineWidth=(i===act)?4:2.5;
+      octx.beginPath();octx.moveTo(xl(t),y);octx.lineTo(xr(t),y);octx.stroke();}
+    octx.restore();
+    octx.fillStyle="#fff";octx.font="bold 12px sans-serif";octx.textAlign="center";octx.shadowColor="#000";octx.shadowBlur=4;
+    octx.fillText(z.pos+"  "+z.distanceM.toFixed(2)+" m",x+w/2,yB+16);
+    octx.shadowBlur=0;octx.textAlign="start";});
+}
+
+/* ---------- top view + steering wheel, 60 fps smoothing ---------- */
+const tc=$("top"),tx=tc.getContext("2d"),SC=40,CX=220;let XTOP=5.4;
+const px=(y)=>CX-y*SC, py=(x)=>(XTOP-x)*SC;
+function wheel(x,y,deg){tx.save();tx.translate(px(y),py(x));tx.rotate(-deg*Math.PI/180);tx.fillStyle="#cfd5e3";tx.fillRect(-0.12*SC,-0.33*SC,0.24*SC,0.66*SC);tx.restore();}
+function drawTop(){
+  XTOP=(veh.wheelbaseM+(veh.lengthM-veh.wheelbaseM)/2)+1.6+.55;   // front bumper + far zone line + margin
+  tx.clearRect(0,0,tc.width,tc.height);
+  const L=veh.wheelbaseM,oh=(veh.lengthM-L)/2,hw=veh.vehicleWidthM/2,t=veh.trackWidthM/2;
+  tx.strokeStyle="#222a39";tx.lineWidth=1;for(let m=-9;m<=7;m++){tx.beginPath();tx.moveTo(0,py(m));tx.lineTo(tc.width,py(m));tx.stroke();}
+  // guide lines (vehicle frame x fwd / y left)
+  if(steer){const fade=steer.gear==="R"?1:.3;tx.lineWidth=3;
+    [["guideLeft"],["guideRight"]].forEach(([k])=>{tx.beginPath();steer[k].forEach((p,i)=>{i?tx.lineTo(px(p[1]),py(p[0])):tx.moveTo(px(p[1]),py(p[0]));});
+      tx.strokeStyle=(steer.gear==="R"?"rgba(52,199,89,":"rgba(139,148,167,")+fade+")";tx.stroke();});}
+  // body
+  tx.fillStyle="#2a3142";tx.strokeStyle="#4b5675";tx.lineWidth=2;tx.beginPath();
+  tx.roundRect?tx.roundRect(px(hw),py(L+oh),veh.vehicleWidthM*SC,veh.lengthM*SC,14):tx.rect(px(hw),py(L+oh),veh.vehicleWidthM*SC,veh.lengthM*SC);tx.fill();tx.stroke();
+  wheel(0,t,0);wheel(0,-t,0);wheel(L,t,cur.l);wheel(L,-t,cur.r);                // front wheels steer
+  tx.fillStyle="#8b94a7";tx.font="11px sans-serif";tx.fillText("FRONT",px(0)-16,py(L+oh)-6);
+  // zones on ALL 4 sides: 3 dotted lines parallel to each side of the car (near=red, mid=yellow, far=green); active zone bold.
+  // LEFT/RIGHT = lines along the body, FRONT/REAR = lines across the bumper. Distance is measured from the car body.
+  if(curb){const D=zoneLines(),Lc=L/2;curb.zones.forEach(z=>{
+    const p=z.pos,none=z.zone==="NONE",end=(p==="FRONT"||p==="REAR");
+    const act=z.zone==="DANGER"?0:z.zone==="WARNING"?1:z.zone==="SAFE"?2:-1;
+    tx.save();tx.setLineDash([7,6]);tx.lineCap="round";
+    D.forEach((d,i)=>{tx.strokeStyle=none?"#9E9E9E":ZC[i];tx.globalAlpha=i===act?1:.55;tx.lineWidth=i===act?3.5:2.2;tx.beginPath();
+      if(end){const xx=p==="FRONT"?L+oh+d:-oh-d,hh=hw*.9;tx.moveTo(px(hh),py(xx));tx.lineTo(px(-hh),py(xx));}                 // front / rear: horizontal bands
+      else{const sg=p==="LEFT"?1:-1,lat=sg*(hw+d),hl=veh.lengthM/2*.9;tx.moveTo(px(lat),py(Lc-hl));tx.lineTo(px(lat),py(Lc+hl));} // left / right: vertical bands
+      tx.stroke();});
+    tx.restore();
+    // NO moving marker: the lines stay fixed, the zone (colour + bold line) follows the distance. Distance is written as FIXED text.
+    const txt=z.distanceM===null?z.zone:z.distanceM.toFixed(2)+" m";tx.fillStyle=none?"#9E9E9E":z.color;tx.font="bold 11px sans-serif";
+    if(end){tx.textAlign="center";tx.fillText(p+" "+txt,px(0),py(p==="FRONT"?L+oh+D[2]:-oh-D[2])+(p==="FRONT"?-6:14));}
+    else{const sg=p==="LEFT"?1:-1;tx.textAlign=sg>0?"right":"left";tx.fillText(p+" "+txt,px(sg*(hw+D[2]))+(sg>0?-6:6),py(Lc)+4);}
+    tx.textAlign="start";});}
+}
+const sc=$("sw"),sx=sc.getContext("2d");
+function drawSW(){sx.clearRect(0,0,150,150);sx.save();sx.translate(75,75);sx.rotate(-cur.swa*Math.PI/180);   // + = left = counter-clockwise
+  sx.strokeStyle="#cfd5e3";sx.lineWidth=9;sx.beginPath();sx.arc(0,0,58,0,7);sx.stroke();sx.lineWidth=7;
+  sx.beginPath();sx.moveTo(-58,0);sx.lineTo(58,0);sx.moveTo(0,0);sx.lineTo(0,58);sx.stroke();
+  sx.fillStyle="#FF3B30";sx.fillRect(-4,-66,8,16);sx.restore();             // red tick = 12 o'clock marker
+  if(steer)$("swTxt").innerHTML="wheel "+cur.swa.toFixed(0)+"&deg;<br>FL "+cur.l.toFixed(1)+"&deg; &nbsp;FR "+cur.r.toFixed(1)+"&deg;<br>"+steer.direction+(steer.turnRadiusM?" R="+steer.turnRadiusM.toFixed(1)+" m":"")+"<br>gear "+steer.gear;}
+(function frame(){cur.swa+=(tgt.swa-cur.swa)*.35;cur.l+=(tgt.l-cur.l)*.35;cur.r+=(tgt.r-cur.r)*.35;drawTop();drawSW();requestAnimationFrame(frame);})();
+
+/* ---------- test controls ---------- */
+const swa=$("swa");swa.oninput=()=>{$("swaV").textContent=swa.value+"\u00b0";};
+let sweeping=false,t0=0;$("sweep").onclick=()=>{sweeping=!sweeping;t0=Date.now();};
+const vcBox=$("vc"),vc={};
+SIDES.forEach(sd=>{const r=document.createElement("div");r.className="row";
+  r.innerHTML='<label><input type="checkbox"> '+sd+'</label><input type="range" min="0.1" max="2.4" step="0.05" value="0.7"><span class="v">0.70 m</span>';
+  vcBox.appendChild(r);const c=r.querySelector("input[type=checkbox]"),d=r.querySelector("input[type=range]"),v=r.querySelector(".v");
+  d.oninput=()=>{v.textContent=(+d.value).toFixed(2)+" m";};vc[sd]={c,d};});
+setInterval(()=>{                                   // TEST: "there is a curb in this frame at X metres"
+  const sides=SIDES.filter(sd=>vc[sd].c.checked).map(sd=>({side:sd,detected:true,distanceM:+vc[sd].d.value,confidence:1}));
+  if(sides.length)fetch("/api/v1/ingest/vision",{method:"POST",headers:hdr(),body:JSON.stringify({sides})}).catch(()=>{});
+},200);
+const sendCb=$("send");let okCnt=0,errMsg="";
+function hdr(){const h={"Content-Type":"application/json"};const k=$("key").value.trim();if(k)h["X-Api-Key"]=k;return h;}
+setInterval(()=>{
+  if(sweeping){const a=450*Math.sin(2*Math.PI*(Date.now()-t0)/12000);swa.value=Math.round(a);swa.oninput();}
+  if(!sendCb.checked){$("sendInfo").textContent="off";return;}
+  const body1=JSON.stringify({steeringWheelDeg:+swa.value,gear:$("gear").value,speedKph:parseFloat($("spd").value)||0});
+  fetch("/api/v1/ingest/steering",{method:"POST",headers:hdr(),body:body1})
+   .then(r=>{okCnt++;errMsg=r.status;$("sendInfo").textContent="sending, HTTP "+errMsg;})
+   .catch(e=>{$("sendInfo").textContent="send failed: "+e;});
+},100);
+</script></body></html>

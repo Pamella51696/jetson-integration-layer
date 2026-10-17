@@ -1,0 +1,280 @@
+package com.middleware.panorama;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.BindException;
+import java.net.NetworkInterface;
+import java.util.Enumeration;
+import java.util.concurrent.Executors;
+
+import com.middleware.panorama.wp5.Wp5Service;
+
+import org.opencv.core.*;
+import org.opencv.imgproc.Imgproc;
+import org.opencv.videoio.VideoCapture;
+
+/**
+ * Live-camera panoramic stitching server.
+ *
+ * Opens N system cameras (by device index), captures frames, resizes them,
+ * feeds them into the feather-blend stitching algorithm, and serves the
+ * result as an MJPEG stream.
+ */
+public class CameraStreamingServer {
+
+    static final int DEFAULT_PORT   = 9091;
+    static final int TARGET_HEIGHT  = 360;
+    static final int TARGET_WIDTH   = 640;
+    static final int OVERLAP_PX     = 80;
+    static final int JPEG_QUALITY   = 88;
+    static final long FRAME_DELAY_MS = 33;  // ~30 fps cap
+
+    public static void main(String[] args) throws IOException {
+        int port = DEFAULT_PORT;
+        int[] cameraIndices = {0, 1, 2, 3};
+
+        if (args.length >= 1) {
+            port = Integer.parseInt(args[0]);
+        }
+        if (args.length >= 2) {
+            cameraIndices = new int[args.length - 1];
+            for (int i = 1; i < args.length; i++) {
+                cameraIndices[i - 1] = Integer.parseInt(args[i]);
+            }
+        }
+
+        if (port < 0 || port > 65535) {
+            System.err.println("Invalid port number: " + port + ". Must be between 0 and 65535.");
+            return;
+        }
+
+        try {
+            nu.pattern.OpenCV.loadLocally();
+        } catch (Exception e) {
+            try {
+                System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+            } catch (UnsatisfiedLinkError err) {
+                System.err.println("OpenCV native library not found: " + err.getMessage());
+                return;
+            }
+        }
+
+        String[] cameraNames = buildCameraNames(cameraIndices);
+        VideoCapture[] captures = openCameras(cameraIndices);
+        if (captures == null) return;
+
+        System.out.println("Opened " + captures.length + " camera(s): indices "
+                + formatIndices(cameraIndices));
+
+        HttpServer server;
+        try {
+            InetSocketAddress bindAddress = new InetSocketAddress("0.0.0.0", port);
+            server = HttpServer.create(bindAddress, 0);
+        } catch (BindException e) {
+            System.err.println("Port " + port + " is already in use. "
+                    + "Please stop the other process or choose a different port.");
+            System.err.println("Usage: ... -Dexec.args=\"<port> [camera_indices...]\" (e.g. 8080 0 1)");
+            for (VideoCapture c : captures) {
+                if (c != null) c.release();
+            }
+            return;
+        }
+
+        server.createContext("/stitch", new LiveStitchHandler(captures));
+        server.createContext("/play", new CommonHandlers.PlayerPageHandler());
+        server.createContext("/meta", new CommonHandlers.MetaHandler(
+                port, cameraNames, TARGET_WIDTH, TARGET_HEIGHT, OVERLAP_PX));
+        server.createContext("/snapshot", new SnapshotHandler(captures));
+
+        // WP-5: steering/wheel + curb-zone signals (SSE) — see docs/WP5_SIGNAL_API.md
+        Wp5Service wp5 = Wp5Service.attach(server, cameraNames, TARGET_WIDTH, TARGET_HEIGHT, OVERLAP_PX);
+
+        // Long-lived streams (/stitch MJPEG, /api/v1/signals SSE) each hold one thread,
+        // so a fixed pool of 4 would starve. Cached pool grows on demand.
+        server.setExecutor(Executors.newCachedThreadPool());
+        server.start();
+
+        System.out.println("Server started on port " + port);
+        System.out.println("Live stream     →  http://localhost:" + port + "/play");
+        System.out.println("MJPEG stream    →  http://localhost:" + port + "/stitch");
+        System.out.println("Single snapshot →  http://localhost:" + port + "/snapshot");
+        System.out.println("Metadata        →  http://localhost:" + port + "/meta");
+        printNetworkAddresses(port);
+
+        HttpServer finalServer = server;
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("\nShutting down — releasing cameras...");
+            for (VideoCapture c : captures) {
+                if (c != null) c.release();
+            }
+            wp5.stop();
+            finalServer.stop(1);
+        }));
+    }
+
+    static void printNetworkAddresses(int port) {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface ni = interfaces.nextElement();
+                if (ni.isLoopback() || !ni.isUp()) continue;
+                Enumeration<InetAddress> addresses = ni.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress addr = addresses.nextElement();
+                    if (addr instanceof java.net.Inet4Address) {
+                        System.out.println("Network access  →  http://"
+                                + addr.getHostAddress() + ":" + port + "/play");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // ignore — network address discovery is best-effort
+        }
+    }
+
+    //  Camera management
+    static VideoCapture[] openCameras(int[] indices) {
+        VideoCapture[] caps = new VideoCapture[indices.length];
+        for (int i = 0; i < indices.length; i++) {
+            caps[i] = new VideoCapture(indices[i]);
+            if (!caps[i].isOpened()) {
+                System.err.println("Cannot open camera at index " + indices[i]);
+                for (int j = 0; j <= i; j++) caps[j].release();
+                return null;
+            }
+        }
+        return caps;
+    }
+
+    static String[] buildCameraNames(int[] indices) {
+        String[] defaultLabels = {"front", "rear", "left", "right"};
+        String[] names = new String[indices.length];
+        for (int i = 0; i < indices.length; i++) {
+            names[i] = (i < defaultLabels.length) ? defaultLabels[i] : "cam" + indices[i];
+        }
+        return names;
+    }
+
+    static String formatIndices(int[] indices) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < indices.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(indices[i]);
+        }
+        return sb.append("]").toString();
+    }
+
+    //  Live MJPEG stitch handler
+    static class LiveStitchHandler implements HttpHandler {
+        private final VideoCapture[] captures;
+
+        LiveStitchHandler(VideoCapture[] captures) {
+            this.captures = captures;
+        }
+
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+                ex.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            ex.getResponseHeaders().set("Content-Type",
+                    "multipart/x-mixed-replace; boundary=frame");
+            ex.getResponseHeaders().set("Cache-Control", "no-cache");
+            ex.sendResponseHeaders(200, 0);
+
+            StitchingCore.StitchWorkspace ws =
+                    new StitchingCore.StitchWorkspace(TARGET_HEIGHT, TARGET_WIDTH, OVERLAP_PX);
+
+            try (OutputStream out = ex.getResponseBody()) {
+                Mat[] frames = new Mat[captures.length];
+                Mat[] resized = new Mat[captures.length];
+                for (int i = 0; i < captures.length; i++) {
+                    frames[i] = new Mat();
+                    resized[i] = new Mat();
+                }
+
+                while (true) {
+                    boolean ok = captureAndResize(captures, frames, resized,
+                            TARGET_WIDTH, TARGET_HEIGHT);
+                    if (!ok) break;
+
+                    Mat panorama = StitchingCore.featherStitchOptimised(
+                            resized, TARGET_WIDTH, TARGET_HEIGHT, OVERLAP_PX, ws);
+                    StitchingCore.writeMjpegFrame(out,
+                            StitchingCore.encodeJpeg(panorama, JPEG_QUALITY));
+                    panorama.release();
+
+                    Thread.sleep(FRAME_DELAY_MS);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                ws.release();
+            }
+        }
+    }
+
+    //  Single-frame snapshot handler
+    static class SnapshotHandler implements HttpHandler {
+        private final VideoCapture[] captures;
+
+        SnapshotHandler(VideoCapture[] captures) {
+            this.captures = captures;
+        }
+
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+                ex.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            Mat[] frames = new Mat[captures.length];
+            Mat[] resized = new Mat[captures.length];
+            for (int i = 0; i < captures.length; i++) {
+                frames[i] = new Mat();
+                resized[i] = new Mat();
+            }
+
+            boolean ok = captureAndResize(captures, frames, resized,
+                    TARGET_WIDTH, TARGET_HEIGHT);
+            if (!ok) {
+                ex.sendResponseHeaders(500, -1);
+                return;
+            }
+
+            Mat panorama = StitchingCore.featherStitch(
+                    resized, TARGET_WIDTH, TARGET_HEIGHT, OVERLAP_PX);
+            byte[] jpeg = StitchingCore.encodeJpeg(panorama, JPEG_QUALITY);
+            panorama.release();
+
+            ex.getResponseHeaders().set("Content-Type", "image/jpeg");
+            ex.getResponseHeaders().set("Cache-Control", "no-cache");
+            ex.sendResponseHeaders(200, jpeg.length);
+            try (OutputStream os = ex.getResponseBody()) {
+                os.write(jpeg);
+            }
+        }
+    }
+    //  Shared helpers
+    static boolean captureAndResize(VideoCapture[] captures, Mat[] frames,
+                                    Mat[] resized, int w, int h) {
+        synchronized (captures) {
+            for (int i = 0; i < captures.length; i++) {
+                if (!captures[i].read(frames[i]) || frames[i].empty()) {
+                    return false;
+                }
+                Imgproc.resize(frames[i], resized[i], new Size(w, h));
+            }
+        }
+        return true;
+    }
+}
