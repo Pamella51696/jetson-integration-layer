@@ -1,0 +1,89 @@
+# METRIC example: use ONLY after config/calibration/*.yaml are filled with real measurements (valid: true, calibration.status: VALIDATED).
+# RECOMMENDED vision config (changes vs config.yaml: per-camera min_confidence 0.21 + edge_fallback false, detection.confidence_threshold 0.21).
+# Use:  PowerShell:  $env:VISION_CONFIG="config.recommended.yaml"   then   python service.py     (run inside the vision folder)
+vision:
+  enabled: true
+  mode: both  # overlay + metric distance (needs VALIDATED calibration files in config/calibration)
+
+  frame_source:
+    type: java_frame_tap
+    fallback: mjpeg
+    mjpeg_url: "http://127.0.0.1:9091/stitch"
+
+  middleware_url: "http://127.0.0.1:9091"
+
+  model:
+    backend: openvino
+    onnx_path: "models/curb_segmentation.onnx"
+    input_width: 896
+    input_height: 512
+    # Per-camera curb mask tuning (pink overlay); see vision/postprocess.py
+    camera_profiles:
+      front: { min_pixels: 25, bottom_roi: 0.38, min_confidence: 0.21, edge_fallback: false }
+      rear:  { min_pixels: 12, bottom_roi: 0.52, min_confidence: 0.21, edge_fallback: false, side_band: 0.55 }
+      left:  { min_pixels: 12, bottom_roi: 0.42, min_confidence: 0.21, edge_fallback: false, side: left,  side_band: 0.45 }
+      right: { min_pixels: 12, bottom_roi: 0.42, min_confidence: 0.21, edge_fallback: false, side: right, side_band: 0.45 }
+
+  input:
+    coordinate_space: auto
+    allow_single_camera: true
+    allow_panorama: true
+
+  detection:
+    confidence_threshold: 0.21  # was 0.12 (reported a curb in every camera); 0.21 separated real curbs on our test clips - re-tune on vehicle footage
+    min_contour_area: 20
+    simplify_epsilon: 2.0
+    max_point_jump_px: 80.0
+    max_inference_fps: 15
+
+  temporal:
+    enabled: true
+    smoothing_alpha: 0.4
+    stable_frames_required: 2
+    stale_timeout_ms: 500
+    hold_on_miss_frames: 1
+
+  inference:
+    target_hz: 12
+    max_frame_age_ms: 2000
+    confidence_threshold: 0.12  # legacy fallback; prefer detection.confidence_threshold
+
+  output:
+    coordinate_space: PANORAMA_PIXELS
+    width: 2320
+    height: 360
+
+  server:
+    host: "127.0.0.1"
+    port: 8765
+
+  calibration:
+    profile: default  # default | synthetic-dev
+    directory: "../config/calibration"
+    allow_synthetic: false  # must be true (or VISION_ALLOW_SYNTHETIC=1) to publish metric from synthetic-dev
+    coordinate_frame: rear_axle
+    ground_plane_z_m: 0.0
+
+  distance:
+    method: ground_plane_projection
+    definition: euclidean_ground_plane
+    min_valid_distance_m: 0.05
+    max_valid_distance_m: 5.0
+    require_valid_calibration: true
+    allow_synthetic_calibration: false
+
+  metric:
+    mode: calibrated  # only cameras whose calibration status is VALIDATED publish a distance
+    report_uncertainty: false
+    max_distance_jump_m: 0.75
+
+  validation:
+    min_detection_confidence: 0.21   # was 0.60: this model's confidence for a real curb is ~0.2-0.4, so 0.60 blocked EVERY metric distance
+    reject_invalid_projection: true
+    max_detection_age_ms: 500
+
+  ingest:
+    enabled: false   # Java has no /api/v1/ingest/range; the distance travels inside the detections message
+    publish_hz: 10
+    sensor_id_prefix: "VISION_"
+    min_pano_strip_px: 40
