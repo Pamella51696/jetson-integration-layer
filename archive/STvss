@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cd /opt/STvss
+export LD_LIBRARY_PATH=/usr/lib/jni && java -cp .:/usr/share/java/opencv4/opencv-4100.jar VideoStreamingServer
+
+
