@@ -1,6 +1,6 @@
 # PR6: Jetson Orin Nano GPU Integration for Curb Detection
 
-**Status:** Specification (implementation not started in this document)  
+**Status:** Implemented in `vision/gpu/` (enable via `VISION_GPU_ENABLED=1` or `vision/config/gpu.yaml`)  
 **Base:** PR1–PR5 middleware + Python vision sidecar (`vision/`)  
 **Target hardware:** NVIDIA Jetson Orin Nano Super Developer Kit (8 GB unified memory, eMMC root filesystem)
 

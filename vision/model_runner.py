@@ -51,13 +51,15 @@ class ModelRunner:
         _, _, h, w = self._onnx.get_inputs()[0].shape
         self.input_h, self.input_w = int(h), int(w)
 
-    def infer(self, bgr: np.ndarray, camera: str = "front") -> CameraDetection:
-        oh, ow = bgr.shape[:2]
+    def infer_logits(self, bgr: np.ndarray) -> np.ndarray:
         resized = cv2.resize(bgr, (self.input_w, self.input_h))
         blob = resized.transpose(2, 0, 1)[np.newaxis, ...].astype(np.float32)
         if self._ov is not None:
-            out = self._ov(blob)[0]
-        else:
-            name = self._onnx.get_inputs()[0].name
-            out = self._onnx.run(None, {name: blob})[0]
+            return self._ov(blob)[0]
+        name = self._onnx.get_inputs()[0].name
+        return self._onnx.run(None, {name: blob})[0]
+
+    def infer(self, bgr: np.ndarray, camera: str = "front") -> CameraDetection:
+        oh, ow = bgr.shape[:2]
+        out = self.infer_logits(bgr)
         return adas_logits_to_detection(out, ow, oh, camera=camera, camera_profiles=self.camera_profiles)

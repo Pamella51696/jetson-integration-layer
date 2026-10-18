@@ -57,9 +57,13 @@ def normalize_jpeg(body: bytes) -> bytes:
 
 
 def load_config() -> Dict[str, Any]:
+    from gpu.gpu_integration import load_gpu_config
+
     path = os.environ.get("VISION_CONFIG", str(ROOT / "config.yaml"))
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)["vision"]
+        vision = yaml.safe_load(f)["vision"]
+    vision["gpu"] = load_gpu_config(vision)
+    return vision
 
 
 CFG = load_config()
@@ -76,6 +80,11 @@ CONF_TH = float(DET_CFG.get("confidence_threshold", _inf.get("confidence_thresho
 DET_CFG = {**DET_CFG, "confidence_threshold": CONF_TH}
 _max_fps = float(DET_CFG.get("max_inference_fps", _inf.get("target_hz", 12)))
 TARGET_HZ = min(float(_inf.get("target_hz", 12)), _max_fps if _max_fps > 0 else 12.0)
+GPU_CFG = CFG.get("gpu") or {}
+_gpu_pipe = GPU_CFG.get("pipeline") or {}
+_gpu_cap = float(_gpu_pipe.get("max_inference_fps", 0))
+if _gpu_cap > 0:
+    TARGET_HZ = min(TARGET_HZ, _gpu_cap)
 MAX_AGE_MS = int(_inf.get("max_frame_age_ms", 2000))
 PANO_W = int(CFG["output"]["width"])
 PANO_H = int(CFG["output"]["height"])
@@ -434,7 +443,7 @@ def inference_loop() -> None:
 def startup() -> None:
     global detector
     refresh_meta()
-    detector = CurbDetector(CFG.get("model", {}), DET_CFG)
+    detector = CurbDetector(CFG.get("model", {}), DET_CFG, GPU_CFG)
     threading.Thread(target=inference_loop, daemon=True).start()
 
     def meta_loop() -> None:
@@ -495,6 +504,7 @@ def health() -> dict:
             }
             for k, c in CALIBRATIONS.items()
         },
+        "gpu": detector.gpu_status() if detector is not None else None,
     }
 
 
