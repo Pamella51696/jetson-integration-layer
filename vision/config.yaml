@@ -9,6 +9,10 @@ vision:
 
   middleware_url: "http://127.0.0.1:9091"
 
+  # PR6 GPU layer: see vision/config/gpu.yaml (VISION_GPU_ENABLED=1 to enable on Jetson)
+  gpu:
+    enabled: false
+
   model:
     backend: openvino
     onnx_path: "models/curb_segmentation.onnx"
